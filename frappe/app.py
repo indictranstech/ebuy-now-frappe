@@ -26,6 +26,11 @@ from frappe.middlewares import StaticDataMiddleware
 
 from frappe.utils.error import make_error_snapshot
 
+import json
+import api_handler
+import api_handler.api
+import api_handler.handler
+
 local_manager = LocalManager([frappe.local])
 
 _site = None
@@ -59,6 +64,17 @@ def application(request):
 
 		init_site(request)
 
+		api_config = None
+		if "api_handler" in frappe.get_installed_apps():
+			file_name = "{}/api_config.json".format(frappe.local.sites_path)
+			if os.path.exists(file_name):
+				with open(file_name, "r") as f:
+					config = f.read()
+					api_config = frappe._dict(json.loads(config)) if config else None
+			
+			if api_config and api_config.api_name:
+				api_config.api_name = "/{0}/".format(api_config.api_name)
+
 		if frappe.local.conf.get('maintenance_mode'):
 			raise frappe.SessionStopped
 
@@ -77,6 +93,10 @@ def application(request):
 		elif frappe.request.path.startswith('/private/files/'):
 			response = frappe.utils.response.download_private_file(request.path)
 
+		# use api_hander handle method
+		elif api_config and api_config.api_name and frappe.request.path.startswith(api_config.api_name):
+			response = api_handler.api.handle(api_config)
+		
 		elif frappe.local.request.method in ('GET', 'HEAD'):
 			response = frappe.website.render.render(request.path)
 
